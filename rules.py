@@ -1,6 +1,5 @@
 """
 This file create and save the rules given by Paodekuai,
-The base actions are given by Doudizhu, we modify some actions
 """
 import os
 import json
@@ -9,23 +8,6 @@ from collections import OrderedDict
 
 ROOT_PATH = os.getcwd()
 
-# a map of action to abstract action, '33345' is legal in Paodekuai, but illegal in Doudizhu
-with open(os.path.join(ROOT_PATH, 'jsondata/pdk_specific_map.json'), 'r') as file:
-    SPECIFIC_MAP = json.load(file, object_pairs_hook=OrderedDict)
-
-# a map of abstract action to its index and a list of abstract action
-with open(os.path.join(ROOT_PATH, 'jsondata/pdk_action_space.json'), 'r') as file:
-    ACTION_SPACE = json.load(file, object_pairs_hook=OrderedDict)
-    ACTION_LIST = list(ACTION_SPACE.keys())
-
-# a map of card to its type. Also return both dict and list to accelerate
-with open(os.path.join(ROOT_PATH, 'jsondata/pdk_card_type.json'), 'r') as file:
-    data = json.load(file, object_pairs_hook=OrderedDict)
-    CARD_TYPE = (data, list(data), set(data))
-
-# a map of type to its cards
-with open(os.path.join(ROOT_PATH, 'jsondata/pdk_type_card.json'), 'r') as file:
-    TYPE_CARD = json.load(file, object_pairs_hook=OrderedDict)
 
 CARD_RANK_STR = ['3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K',
                  'A', '2']
