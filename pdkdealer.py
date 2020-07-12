@@ -3,9 +3,9 @@
 '''
 
 import functools
-
+import random
 from pdkutils import init_48_deck
-from pdkutils import cards2str, paodekuai_sort_card
+from pdkutils import cards2str, cards2str_with_suit, paodekuai_sort_card
 
 
 class PaodekuaiDealer(object):
@@ -36,13 +36,25 @@ class PaodekuaiDealer(object):
             players (list): list of PaodekuaiPlayer objects
         '''
         hand_num = len(self.deck) // self.num_split
+        #check
 
         for index, player in enumerate(players):
-            current_hand = self.deck[index*hand_num:(index+1)*hand_num]
+            current_hand = self.deck[index * hand_num:(index + 1) * hand_num]
             current_hand.sort(key=functools.cmp_to_key(paodekuai_sort_card))
             player.set_current_hand(current_hand)
             player.initial_hand = cards2str(player.current_hand)
 
+    # The player who got 'S3' will go first
+    def determine_first(self, players, game_rule=False, random_deal=True):
+        if game_rule:
+            sign = 'S3'
+            for player in players:
+                if sign in cards2str_with_suit(player.current_hand):
+                    return player.player_id
+        if random_deal:
+            return random.randint(0, len(players)-1)
+        else:
+            return 0
 
     # def determine_role(self, players):
     #     ''' Determine landlord and peasants according to players' hand

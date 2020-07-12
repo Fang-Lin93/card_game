@@ -1,17 +1,19 @@
 import numpy as np
 # from rlcard.utils import *
 from utils import *
+from pdkutils import CARD_TYPE
 import seeding
 
 DEFAULT_CONFIG = {
     'allow_step_back': False,
-    'allow_raw_data': False,
+    'allow_raw_data': True,
     'single_agent_mode': False,
-    'active_player': 0,
-    'record_action': False,
+    'active_player': 0,  # the player that is human or training agent
+    'record_action': True,
     'seed': None,
     'env_num': 1,
 }
+BOMB = ['3' * 4, '4' * 4, '5'* 4, '6'* 4, '7'* 4, '8'* 4, '9'* 4, 'T'* 4, 'J'* 4, 'Q'* 4, 'K'* 4, 'A'* 3]
 
 
 class Env(object):
@@ -53,8 +55,10 @@ class Env(object):
         self.allow_step_back = self.game.allow_step_back = config['allow_step_back']
         self.allow_raw_data = config['allow_raw_data']
         self.record_action = config['record_action']
+        self.trajectories = None
         if self.record_action:
             self.action_recorder = []
+
 
         # Game specific configurations
         # Currently only support blackjack
@@ -70,6 +74,13 @@ class Env(object):
         # Get the number of players/actions in this game
         self.player_num = self.game.get_player_num()
         self.action_num = self.game.get_action_num()
+
+        # initialize reward and cumulative reward
+        self.reward_recoder = None
+        self.cum_reward = {}
+        for i in range(self.player_num):
+            self.cum_reward[i] = 0
+
 
         # A counter for the timesteps
         self.timestep = 0
@@ -140,7 +151,7 @@ class Env(object):
         return self._extract_state(next_state), player_id
 
     def step_back(self):
-        ''' Take one step backward.
+        """ Take one step backward.
 
         Returns:
             (tuple): Tuple containing:
@@ -149,9 +160,9 @@ class Env(object):
                 (int): The ID of the previous player
 
         Note: Error will be raised if step back from the root node.
-        '''
+        """
         if not self.allow_step_back:
-            raise Exception('Step back is off. To use step_back, please set allow_step_back=True in rlcard.make')
+            raise Exception('Step back is off. To use step_back, please set allow_step_back=True')
 
         if not self.game.step_back():
             return False
@@ -162,13 +173,13 @@ class Env(object):
         return state, player_id
 
     def set_agents(self, agents):
-        '''
+        """
         Set the agents that will interact with the environment.
         This function must be called before `run`.
 
         Args:
             agents (list): List of Agent classes
-        '''
+        """
         if self.single_agent_mode:
             raise ValueError('Setting agent in single agent mode or human mode is not allowed.')
 
@@ -230,7 +241,7 @@ class Env(object):
             player_id = next_player_id
 
             # Save state.
-            if not self.game.is_over():
+            if not self.game.is_over(): # reward R(t+1) and state S(t+1) are jointly determined
 
                 # Save immediate reward, which is not the reward in RL sense(since env hasn't been done!)
                 if recorder[player_id]:
@@ -241,8 +252,10 @@ class Env(object):
                 # Save state.
                 trajectories[player_id].append(state)
 
+            winner = player_id
         # Add a final state to all the players, so all players get finals!
-        for player_id in range(self.player_num):
+        for i in range(self.player_num):
+            player_id = (winner + i) % self.player_num
             state = self.get_state(player_id)
 
             if recorder[player_id]:
@@ -257,10 +270,11 @@ class Env(object):
         #    reward_seq += [self.get_payoffs()]
 
         # Reorganize the trajectories
-        self.test = trajectories
         #  trajectories = reorganize(trajectories, reward_seq)
         # reorganized to transitions
         trajectories = paodekuai_reorganize(trajectories)
+        self.reward_recoder = reward_seq
+        self.trajectories = trajectories
         return trajectories, reward_seq
 
     def is_over(self):
@@ -359,7 +373,7 @@ class Env(object):
         raise NotImplementedError
 
     def _decode_action(self, action_id):
-        ''' Decode Action id to the action in the game.
+        """ Decode Action id to the action in the game.
 
         Args:
             action_id (int): The id of the action
@@ -368,7 +382,7 @@ class Env(object):
             (string): The action that will be passed to the game engine.
 
         Note: Must be implemented in the child class.
-        '''
+        """
         raise NotImplementedError
 
     def _get_legal_actions(self):
@@ -462,6 +476,7 @@ class PaodekuaiEnv(Env):
         #     obs[index][0] = np.ones(13, dtype=int)
         self._encode_cards(obs[0], state['current_hand'])
         self._encode_cards(obs[1], state['others_hand'])
+        # trace: from old to new, so the old is put in the bottom layer
         for i, action in enumerate(state['trace'][-3:]):
             if action[1] != 'pass':
                 self._encode_cards(obs[4 - i], action[1])
@@ -472,10 +487,10 @@ class PaodekuaiEnv(Env):
         if self.allow_raw_data:
             extracted_state['raw_obs'] = state
             # TODO: state['actions'] can be None, may have bugs
-            if state['actions'] == None:
-                extracted_state['raw_legal_actions'] = []
-            else:
-                extracted_state['raw_legal_actions'] = [a for a in state['actions']]
+            # if state['actions'] == None:
+            #     extracted_state['raw_legal_actions'] = []
+            # else:
+            #     extracted_state['raw_legal_actions'] = [a for a in state['actions']]
         if self.record_action:
             extracted_state['action_record'] = self.action_recorder
         return extracted_state
@@ -491,11 +506,33 @@ class PaodekuaiEnv(Env):
     def transition_reward(self, state, action, next_state, player_id):
         ''' Get the reward of players. Must be implemented in the child class.
 
+        state:  extracted RL state
         Returns:
             payoffs (list): a list of payoffs for each player
         '''
+        reward = 0
+        # be careful of the initial win!
+        if len(next_state['raw_obs']['trace']) >= 2:
+            if next_state['raw_obs']['trace'][-1][1] in BOMB:
+                reward -= 10
+            if len(next_state['raw_obs']['trace']) >= 3:
+                if next_state['raw_obs']['trace'][-2][1] in BOMB:
+                    reward -= 10
 
-        return int(self.game.winner_id == player_id)
+        if action != 'pass' and action in BOMB:
+                reward += 20
+
+        if self.game.is_over():
+            if self.game.winner_id == player_id:
+                reward += len(next_state['raw_obs']['others_hand'])
+            else:
+                current_count = len(next_state['raw_obs']['current_hand'])
+                if current_count != 1:
+                    reward -= current_count
+
+        self.cum_reward[player_id] += reward
+        return reward
+        # return int(self.game.winner_id == player_id)
 
     def _decode_action(self, action_id):
         ''' Action id -> the action in the game. Must be implemented in the child class.
@@ -507,6 +544,27 @@ class PaodekuaiEnv(Env):
             action (string): the action that will be passed to the game engine.
         '''
         return action_id
+
+    def get_summary(self):
+
+        from pdkutils import visual_cards
+
+        for player in self.game.players:
+            print('==========Initial Hands: Player_{}==========='.format(player.player_id))
+            visual_cards(player.initial_hand)
+
+        print('========== Winner ==========')
+        print('Player_{}'.format(self.game.winner_id))
+
+        print('==========Actions Trace===========')
+        time_step = 1
+        for action, reward in zip(self.game.state['trace'], self.reward_recoder):
+            print(f'Step_{time_step}')
+            print('     ' + 'Player_{}:'.format(action[0]))
+            print('     ' + 'Action: ' + action[1])
+            print('     ' + 'Reward: ' + str(reward[1]))
+            time_step += 1
+
         # abstract_action = self._ACTION_LIST[action_id]
         # # without kicker
         # if '*' not in abstract_action:
@@ -579,6 +637,6 @@ if __name__ == '__main__':
     env = PaodekuaiEnv(config={'record_action': True})
     random_agent = RandomAgent(env.action_num)
     human_agent = HumanAgent()
-    env.set_agents([random_agent, human_agent, random_agent])
+    env.set_agents([random_agent, random_agent, random_agent])
 
     trajectories, payoffs = env.run(is_training=False)

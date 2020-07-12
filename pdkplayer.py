@@ -5,7 +5,7 @@
 import functools
 
 from pdkutils import get_gt_cards
-from pdkutils import cards2str, paodekuai_sort_card
+from pdkutils import cards2str, cards2str_with_suit, paodekuai_sort_card
 
 
 class PaodekuaiPlayer(object):
@@ -39,6 +39,7 @@ class PaodekuaiPlayer(object):
         self._recorded_played_cards = []
 
     @property
+    # current_hand gives Card object
     def current_hand(self):
         return self._current_hand
 
@@ -46,17 +47,18 @@ class PaodekuaiPlayer(object):
         self._current_hand = value
 
     def get_state(self, public, others_hands, actions):
-        state = {}
-        state['deck'] = public['deck']
-#        state['seen_cards'] = public['seen_cards']
-#        state['landlord'] = public['landlord']
-        state['trace'] = public['trace'].copy()
-        state['played_cards'] = public['played_cards'].copy()
-        state['self'] = self.player_id
-        state['initial_hand'] = self.initial_hand
-        state['current_hand'] = cards2str(self._current_hand)
-        state['others_hand'] = others_hands
-        state['actions'] = actions
+
+        state = {**public,
+                 'self': self.player_id, 'initial_hand': self.initial_hand,
+                 'current_hand': cards2str(self._current_hand),
+                 'current_suit_hand': cards2str_with_suit(self._current_hand), 'others_hand': others_hands,
+                 'actions': actions}
+
+#         state['deck'] = public['deck']
+# #        state['seen_cards'] = public['seen_cards']
+# #        state['landlord'] = public['landlord']
+#         state['trace'] = public['trace'].copy()
+#         state['played_cards'] = public['played_cards'].copy()
 
         return state
 

@@ -6,7 +6,7 @@ import functools
 import numpy as np
 
 from pdkdealer import PaodekuaiDealer as Dealer
-from pdkutils import cards2str, paodekuai_sort_card
+from pdkutils import cards2str, sort_card
 from pdkutils import CARD_RANK_STR, CARD_RANK_STR_INDEX
 
 
@@ -17,7 +17,7 @@ class PaodekuaiRound(object):
     def __init__(self, np_random):
         self.np_random = np_random
         self.trace = []
-        self.played_cards = np.zeros((len(CARD_RANK_STR), ), dtype=np.int)
+        self.played_cards = '' #np.zeros((len(CARD_RANK_STR), ), dtype=np.int)
 
         self.greater_player = None
         self.dealer = Dealer(self.np_random)
@@ -31,17 +31,12 @@ class PaodekuaiRound(object):
         '''
         self.dealer.shuffle()
         self.dealer.deal_cards(players)
-        # landlord_id = self.dealer.determine_role(players)
-        # seen_cards = self.dealer.deck[-3:]
-        # seen_cards.sort(key=functools.cmp_to_key(paodekuai_sort_card))
-        # self.seen_cards = cards2str(seen_cards)
-        # self.landlord_id = landlord_id
-        self.current_player = 0
-        # self.public = {'deck': self.deck_str, 'seen_cards': self.seen_cards,
-        #                'landlord': self.landlord_id, 'trace': self.trace,
-        #                'played_cards': []}
+
+        self.current_player = self.dealer.determine_first(players)
+
+        remains = {'remain_{}'.format(player.player_id) : len(player.current_hand) for player in players}
         self.public = {'deck': self.deck_str, 'trace': self.trace,
-                       'played_cards': []}
+                       'played_cards': '', **remains}
 
     @staticmethod
     def cards_ndarray_to_list(ndarray_cards):
@@ -51,7 +46,7 @@ class PaodekuaiRound(object):
                 result.extend([CARD_RANK_STR[i]] * ndarray_cards[i])
         return result
 
-    def update_public(self, action):
+    def update_public(self, player, action):
         ''' Update public trace and played cards
 
         Args:
@@ -59,13 +54,17 @@ class PaodekuaiRound(object):
         '''
         self.trace.append((self.current_player, action))
         if action != 'pass':
-            for c in action:
-                self.played_cards[CARD_RANK_STR_INDEX[c]] += 1
-            self.public['played_cards'] = self.cards_ndarray_to_list(self.played_cards)
+            self.played_cards += action
+            self.played_cards = sort_card(self.played_cards)
+            # for c in action:
+            #     self.played_cards[CARD_RANK_STR_INDEX[c]] += 1
+            self.public['played_cards'] = self.played_cards#self.cards_ndarray_to_list(self.played_cards)
+            self.public['remain_{}'.format(player.player_id)] = len(player.current_hand) - len(action)
             # self.played_cards.extend(list(action))
             # self.played_cards.sort(key=functools.cmp_to_key(paodekuai_sort_str))
 
     def proceed_round(self, player, action):
+        # this is how player update their cards
         ''' Call other Classes's functions to keep one round running
 
         Args:
@@ -75,7 +74,8 @@ class PaodekuaiRound(object):
         Returns:
             object of PaodekuaiPlayer: player who played current biggest cards.
         '''
-        self.update_public(action)
+        # First update public information, then update the hands of the player
+        self.update_public(player, action)
         self.greater_player = player.play(action, self.greater_player)
         return self.greater_player
 
@@ -91,9 +91,10 @@ class PaodekuaiRound(object):
         self.current_player = player_id
         if (cards != 'pass'):
             for card in cards:
+                self.played_cards = self.played_cards.replace(card, '')
                 # self.played_cards.remove(card)
-                self.played_cards[CARD_RANK_STR_INDEX[card]] -= 1
-            self.public['played_cards'] = self.cards_ndarray_to_list(self.played_cards)
+                #self.played_cards[CARD_RANK_STR_INDEX[card]] -= 1
+            self.public['played_cards'] = self.played_cards# self.cards_ndarray_to_list(self.played_cards)
         greater_player_id = self.find_last_greater_player_id_in_trace()
         if (greater_player_id is not None):
             self.greater_player = players[greater_player_id]

@@ -13,9 +13,8 @@ from pdkround import PaodekuaiRound as Round
 from pdkjudger import PaodekuaiJudger as Judger
 
 
-
 class PaodekuaiGame(object):
-    ''' Provide game APIs for env to run doudizhu and get corresponding state
+    """ Provide game APIs for env to run doudizhu and get corresponding state
     information.
 
     An example of state during runtime:
@@ -32,7 +31,7 @@ class PaodekuaiGame(object):
              'current_hand': '3456677799TJQKAAB',
              'actions': ['pass', 'K', 'A', 'B']
             }
-    '''
+    """
 
     def __init__(self, allow_step_back=False):
         self.allow_step_back = allow_step_back
@@ -67,6 +66,8 @@ class PaodekuaiGame(object):
         others_hands = self._get_others_current_hand(player)
         actions = list(self.judger.playable_cards[player_id])
         state = player.get_state(self.round.public, others_hands, actions)
+
+
         self.state = state
 
         return state, player_id
@@ -82,7 +83,7 @@ class PaodekuaiGame(object):
             int: next player's id
         '''
         if action not in self.state['actions']:
-            raise ValueError('The action is illegal')
+            raise ValueError('The action is illegal:{}'.format(action))
 
         if self.allow_step_back:
             # TODO: don't record game.round, game.players, game.judger if allow_step_back not set
@@ -91,6 +92,7 @@ class PaodekuaiGame(object):
         # perfrom action
         player = self.players[self.round.current_player]
         self.round.proceed_round(player, action)
+        # after the action , re calculate the all legal actions without comparison
         if (action != 'pass'):
             self.judger.calc_playable_cards(player)
         if self.judger.judge_game(self.players, self.round.current_player):
@@ -155,7 +157,7 @@ class PaodekuaiGame(object):
         ''' Return the total number of abstract acitons
 
         Returns:
-            int: the total number of abstract actions of doudizhu
+            int: the total number of abstract actions of paodekuai
         '''
         return len(ACTION_LIST)+1
 

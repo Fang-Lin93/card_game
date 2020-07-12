@@ -130,13 +130,12 @@ def paodekuai_sort_card(card_1, card_2):
         # if card.rank == '':
         #     key.append(CARD_RANK.index(card.suit)) # if it's BJ or RJ
         # else:
-            key.append(CARD_RANK.index(card.rank))
+        key.append(CARD_RANK.index(card.rank))
     if key[0] > key[1]:
         return 1
     if key[0] < key[1]:
         return -1
     return 0
-
 
 def get_landlord_score(current_hand):
     ''' Roughly judge the quality of the hand, and provide a score as basis to
@@ -288,8 +287,8 @@ def encode_cards(plane, cards):
     while cards_pool:
         set_cards = set(cards_pool)
         for card in set_cards:
-            rank = CARD_RANK_STR.index(card)
-            plane[layer][rank] = 1
+            idx = CARD_RANK_STR.index(card)
+            plane[layer][idx] = 1
             cards_pool.remove(card)
         layer += 1
 
@@ -338,26 +337,15 @@ def visual_cards(plane):
             print('   '.join(line))
 
 
-def get_gt_cards(player, greater_player):
-    ''' Provide player's cards which are greater than the ones played by
-    previous player in one round
-
-    Args:
-        player (PaodekuaiPlayer object): the player waiting to play cards
-        greater_player (PaodekuaiPlayer object): the player who played current biggest cards.
-
-    Returns:
-        list: list of string of greater cards
-
-    Note:
-        1. return value contains 'pass'
-    '''
+def gt_greater_cards_from_hands(current_hand, target_cards):
+    """
+    :param hands: (str) gives the candidate string hands
+    :param others: (str) the hands to be compared, must be legal cards in the game
+    :return:
+    """
     from pdkjudger import PaodekuaiJudger
-
     gt_cards = []
-    current_hand = cards2str(player.current_hand)
     contains_legal = PaodekuaiJudger.playable_cards_from_hand(current_hand)
-    target_cards = greater_player.played_cards
     target_types = CARD_TYPE[0][target_cards]
     type_dict = {}  # type_dict stores the target types which the player is trying to beat with
     # if cards can be multiply explained, choose the largest one
@@ -386,6 +374,73 @@ def get_gt_cards(player, greater_player):
     if not gt_cards:
         gt_cards += ['pass']
     return gt_cards
+
+
+def get_gt_cards(player, greater_player):
+    ''' Provide player's cards which are greater than the ones played by
+    previous player in one round
+
+    Args:
+        player (PaodekuaiPlayer object): the player waiting to play cards
+        greater_player (PaodekuaiPlayer object): the player who played current biggest cards.
+
+    Returns:
+        list: list of string of greater cards
+
+    Note:
+        1. return value contains 'pass' iff the player has no greater cards
+    '''
+
+    current_hand = cards2str(player.current_hand)
+    target_cards = greater_player.played_cards
+
+    return gt_greater_cards_from_hands(current_hand, target_cards)
+
+
+def classify_actions(legal_actions):
+    """
+    :param legal_actions: list of strings: ['A', '33345',...]
+    :return: a dict
+    """
+    classified_dic = OrderedDict()
+    for action in legal_actions:
+        for card_type, card_power in CARD_TYPE[0][action]:
+            if card_type not in classified_dic:
+                classified_dic[card_type] = [(action, card_power)]
+            else:
+                classified_dic[card_type] += [(action, card_power)]
+    # sort the values by the card power
+    for key in classified_dic.keys():
+        classified_dic[key] = sorted(classified_dic[key], key=lambda x: int(x[1]))
+    return classified_dic
+
+
+def hands_islands(plane):
+    """
+    :param plane: given the card plane, return the number of the parts of the hands
+    :return:
+    """
+    front_path = np.concatenate([[0], plane[0]])
+    back_path = np.concatenate([plane[0], [0]])
+
+    return sum(front_path > back_path)
+
+
+def sort_card(cards):
+    """
+    i.e. '43592TAK' -> return '3459TKA2'
+    :param cards: (str) of cards
+    :return:
+    """
+    ORDER = '3456789TJQKA2'
+    res = ''
+    candid = list(cards)
+    for card in ORDER:
+        while card in candid:
+            res += card
+            candid.remove(card)
+    return res
+
 
 # Test json order
 # if __name__ == '__main__':

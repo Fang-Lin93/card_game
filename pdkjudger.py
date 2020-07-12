@@ -5,18 +5,49 @@ import numpy as np
 import collections
 from itertools import combinations
 from bisect import bisect_left
-
-from pdkutils import CARD_RANK_STR, CARD_RANK_STR_INDEX
+from rules import sort_card_rank
+from pdkutils import CARD_RANK_STR, CARD_RANK_STR_INDEX, ACTION_LIST
 from pdkutils import cards2str, contains_cards
 
 
+def sort_card(cards):
+    card_order = '3456789TJQKA2'
+    res = ''
+    candid = list(cards)
+    for card in card_order:
+        while card in candid:
+            res += card
+            candid.remove(card)
+    return res
+
+
+FIXED_LIST = []
+FLEXIBLE_LIST = []
+for card in ACTION_LIST:
+    if '*' not in card:
+        FIXED_LIST += [card]
+    else:
+        FLEXIBLE_LIST += [(card, card.replace('*', ''))]
+
+
 class PaodekuaiJudger(object):
-    ''' Determine what cards a player can play
-    '''
+    """ Determine what cards a player can play
+    """
+
+    @staticmethod
+    def sort_card(cards):
+        card_order = '3456789TJQKA2'
+        res = ''
+        candid = list(cards)
+        for card in card_order:
+            while card in candid:
+                res += card
+                candid.remove(card)
+        return res
 
     @staticmethod
     def chain_indexes(indexes_list):
-        ''' Find chains for solos, pairs and trios by using indexes_list
+        """ Find chains for solos, pairs and trios by using indexes_list
 
         Args:
             indexes_list: the indexes of cards those have the same count, the count could be 1, 2, or 3.
@@ -24,7 +55,7 @@ class PaodekuaiJudger(object):
         Returns:
             list of tuples: [(start_index1, length1), (start_index1, length1), ...]
 
-        '''
+        """
         chains = []
         prev_index = -100
         count = 0
@@ -123,11 +154,13 @@ class PaodekuaiJudger(object):
 
     @staticmethod
     def playable_cards_from_hand(current_hand):
-        ''' Get playable cards from hand
+        """ Get playable cards from hand
+
+        current_hand: (str)
 
         Returns:
             set: set of string of playable cards
-        '''
+        """
         cards_dict = collections.defaultdict(int)
         for card in current_hand:
             cards_dict[card] += 1
@@ -149,6 +182,16 @@ class PaodekuaiJudger(object):
         for i in more_than_3_indexes:
             cards = CARD_RANK_STR[i[0]] * 4
             playable_cards.add(cards)
+
+        if 'AAA' in current_hand:
+            playable_cards.add('AAA')
+            rest = list(current_hand.replace('AAA', ''))
+            others = set(combinations(rest, 3))
+            for other in others:
+                new = 'AAA'
+                for rank in other:
+                    new += rank
+                playable_cards.add(sort_card_rank(new))
 
         # solo_chain_5 -- #solo_chain_12 start_index is idx in CARD_RANK_STR, gets rank
         solo_chain_indexes = PaodekuaiJudger.chain_indexes(non_zero_indexes)
@@ -195,7 +238,7 @@ class PaodekuaiJudger(object):
                     elif (j > i):
                         playable_cards.add(CARD_RANK_STR[i[0]] * 3 + CARD_RANK_STR[j[0]])
 
-      #  trio + solo*2
+        # trio + solo*2
             for left, right in PaodekuaiJudger.solo_attachments(current_hand, i[0], 1, 2):
                 pre_attached = ''
                 for j in left:
@@ -206,10 +249,13 @@ class PaodekuaiJudger(object):
                 playable_cards.add(pre_attached + CARD_RANK_STR[i[0]]*3 + post_attached)
 
 
-
-        # trio_solo, trio_pair, #trio -- trio_chain_2 -- trio_chain_6; trio_solo_chain_2 -- trio_solo_chain_5; trio_pair_chain_2 -- trio_pair_chain_4
+        # plane_chain
         trio_chain_indexes = PaodekuaiJudger.chain_indexes(more_than_2_indexes)
         for (start_index, length) in trio_chain_indexes:
+            # # if you can finish it
+            if length * 5 >= hands_count:
+                playable_cards.add(current_hand)
+
             s, l = start_index, length
             while l >= 2:
                 cards = ''
@@ -251,6 +297,18 @@ class PaodekuaiJudger(object):
                 l -= 1
                 s += 1
 
+        # bomb_solo_chain
+        for i in more_than_3_indexes:
+            if hands_count <= 7:
+                playable_cards.add(current_hand)
+            rest = list(current_hand.replace(CARD_RANK_STR[i[0]]*4, ''))
+            others = set(combinations(rest, 3))
+            for other in others:
+                new = CARD_RANK_STR[i[0]]*4
+                for rank in other:
+                    new += rank
+                playable_cards.add(sort_card_rank(new))
+
         return playable_cards
 
     def __init__(self, players, np_random):
@@ -266,7 +324,7 @@ class PaodekuaiJudger(object):
             self.playable_cards[player_id] = self.playable_cards_from_hand(current_hand)
 
     def calc_playable_cards(self, player):
-        ''' Recalculate all legal cards the player can play according to his
+        """ Recalculate all legal cards the player can play according to his
         current hand.
 
         Args:
@@ -276,34 +334,51 @@ class PaodekuaiJudger(object):
 
         Returns:
             list: list of string of playable cards
-        '''
-        removed_playable_cards = []
+        """
 
         player_id = player.player_id
-        current_hand = cards2str(player.current_hand)
-        missed = None
-        for single in player.singles:
-            if single not in current_hand:
-                missed = single
-                break
-
+        # old playable cards
         playable_cards = self.playable_cards[player_id].copy()
 
-        if missed is not None:
-            position = player.singles.find(missed)
-            player.singles = player.singles[position + 1:]
-            for cards in playable_cards:
-                if missed in cards or (not contains_cards(current_hand, cards)):
-                    removed_playable_cards.append(cards)
-                    self.playable_cards[player_id].remove(cards)
-        else:
-            for cards in playable_cards:
-                if not contains_cards(current_hand, cards):
-                    # del self.playable_cards[player_id][cards]
-                    removed_playable_cards.append(cards)
-                    self.playable_cards[player_id].remove(cards)
+        # this current_hand is updated after action ,so it's different from old_playable_cards
+        current_hand = cards2str(player.current_hand)
+
+        current_legal = self.playable_cards_from_hand(current_hand)
+        removed_playable_cards = list(playable_cards.difference(current_legal))
+        self.playable_cards[player_id] = current_legal
         self._recorded_removed_playable_cards[player_id].append(removed_playable_cards)
+
         return self.playable_cards[player_id]
+
+        # player_id = player.player_id
+        # removed_playable_cards = []
+        # missed = None
+        # for single in player.singles:
+        #     if single not in current_hand:
+        #         missed = single
+        #         break
+        #
+        # playable_cards = self.playable_cards[player_id].copy()
+        # print("before:")
+        # print(playable_cards)
+        # if missed is not None:
+        #     position = player.singles.find(missed)
+        #     player.singles = player.singles[position + 1:]
+        #     for cards in playable_cards:
+        #         if missed in cards or (not contains_cards(current_hand, cards)):
+        #             removed_playable_cards.append(cards)
+        #             self.playable_cards[player_id].remove(cards)
+        # else:
+        #     for cards in playable_cards:
+        #         if not contains_cards(current_hand, cards):
+        #             # del self.playable_cards[player_id][cards]
+        #             removed_playable_cards.append(cards)
+        #             self.playable_cards[player_id].remove(cards)
+        # self._recorded_removed_playable_cards[player_id].append(removed_playable_cards)
+        # print('removed:')
+        # print(self._recorded_removed_playable_cards[player_id])
+        # print(self.playable_cards[player_id])
+        # return self.playable_cards[player_id]
 
     def restore_playable_cards(self, player_id):
         ''' restore playable_cards for judger for game.step_back().
@@ -356,3 +431,36 @@ class PaodekuaiJudger(object):
         #         if index != landlord_id:
         #             payoffs[index] = 1
         return payoffs
+
+# def playable_cards_from_hand(current_hand):
+#     playable_cards = set()
+#     for cards in FIXED_LIST:
+#         if cards in current_hand:
+#             playable_cards.add(cards)
+#     for abstract_cards, main_part in FLEXIBLE_LIST:
+#         if len(abstract_cards) >= len(current_hand):
+#             playable_cards.add(current_hand)
+#         elif main_part in current_hand:
+#             rest = current_hand.replace(main_part, '')
+#             uncertain = abstract_cards.count("*")
+#             others = set(combinations(rest, uncertain))
+#             for other in others:
+#                 new = main_part
+#                 for card in other:
+#                     new += card
+#                 playable_cards.add(sort_card(new))
+#     return playable_cards
+
+
+# if __name__ is 'main':
+#     import time
+#     from tqdm import tqdm
+#     current_hand = '444455567888999TTT'
+#     start_time = time.time()
+#     for i in tqdm(range(10000)):
+#         PaodekuaiJudger.playable_cards_from_hand(current_hand)
+#
+#     end_time = time.time()
+#
+#     print('Time={}'.format(end_time - start_time))
+

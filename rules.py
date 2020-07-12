@@ -1,5 +1,6 @@
 """
 This file create and save the rules given by Paodekuai,
+The base actions are given by Paodekuai, we modify some actions
 """
 import os
 import json
@@ -8,6 +9,23 @@ from collections import OrderedDict
 
 ROOT_PATH = os.getcwd()
 
+# a map of action to abstract action, '33345' is legal in Paodekuai, but illegal in Doudizhu
+with open(os.path.join(ROOT_PATH, 'jsondata/pdk_specific_map.json'), 'r') as file:
+    SPECIFIC_MAP = json.load(file, object_pairs_hook=OrderedDict)
+
+# a map of abstract action to its index and a list of abstract action
+with open(os.path.join(ROOT_PATH, 'jsondata/pdk_action_space.json'), 'r') as file:
+    ACTION_SPACE = json.load(file, object_pairs_hook=OrderedDict)
+    ACTION_LIST = list(ACTION_SPACE.keys())
+
+# a map of card to its type. Also return both dict and list to accelerate
+with open(os.path.join(ROOT_PATH, 'jsondata/pdk_card_type.json'), 'r') as file:
+    data_card_type = json.load(file, object_pairs_hook=OrderedDict)
+    CARD_TYPE = (data_card_type, list(data_card_type), set(data_card_type))
+
+# a map of type to its cards
+with open(os.path.join(ROOT_PATH, 'jsondata/pdk_type_card.json'), 'r') as file:
+    TYPE_CARD = json.load(file, object_pairs_hook=OrderedDict)
 
 CARD_RANK_STR = ['3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K',
                  'A', '2']
@@ -115,11 +133,22 @@ def solo_chain():
     return res
 
 
+def bomb_solo_chain():
+    res = OrderedDict()
+    type_sets = OrderedDict()
+    for i in range(len(CARD_RANK_STR[:-2])):
+        type_sets[str(i)] = CARD_RANK_STR[i] * 4 + '***'
+    type_sets[str(i+1)] = 'AAA***'
+    res['bomb_solo_chain'] = type_sets
+    return res
+
+
 def bomb():
     res = OrderedDict()
     type_sets = OrderedDict()
     for i in range(len(CARD_RANK_STR[:-2])):
         type_sets[str(i)] = CARD_RANK_STR[i] * 4
+    type_sets[str(i+1)] = 'AAA'
     res['bomb'] = type_sets
     return res
 
@@ -144,8 +173,12 @@ def abstract2cards(abstract):
     main_part = abstract.replace('*', '')
     res = []
     if stars != 0:
-        # 0 permits 'JJJ', 1 permits '4JJJ'
-        uncertains = {0, int(len(main_part) / 3), stars}
+        # 0 permits 'JJJ', 1 permits '4JJJ', 2 permits '45JJJ'
+        uncertains = list(range(stars+1))
+        # if len(main_part) != 4:
+        #     uncertains = {0, int(len(main_part) / 3), stars}
+        # else:
+        #     uncertains = {stars}
         for uncertain in uncertains:
             rest = deck.replace(main_part, '')
             others = set(itertools.combinations(rest, uncertain))
@@ -167,16 +200,19 @@ def action_space():
     action_pair_chain = []
     action_plane = []
     action_solo_chain = []
+    action_bomb_chain = []
     for type_name in pair_chain().values():
         action_pair_chain += list(type_name.values())
     for type_name in plane().values():
         action_plane += list(type_name.values())
     for type_name in solo_chain().values():
         action_solo_chain += list(type_name.values())
+    for type_name in bomb_solo_chain().values():
+        action_bomb_chain += list(type_name.values())
 
     action_bomb = list(bomb()['bomb'].values())
-    total_actions = action_solo + action_pair + action_pair_chain + action_plane + action_solo_chain + action_bomb \
-                    + ['pass']
+    total_actions = action_solo + action_pair + action_pair_chain + action_plane + action_solo_chain +\
+                    action_bomb_chain + action_bomb + ['pass']
     actions = OrderedDict()
     for i, name in enumerate(total_actions):
         actions[name] = i
@@ -184,7 +220,8 @@ def action_space():
 
 
 def type_card():
-    total_abstract = OrderedDict(**solo(), **pair(), **pair_chain(), **plane(), **solo_chain(), **bomb())
+    total_abstract = OrderedDict(**solo(), **pair(), **pair_chain(), **plane(),
+                                 **solo_chain(), **bomb_solo_chain(), **bomb())
     for type_name in total_abstract.keys():
         for card_order in total_abstract[type_name].keys():
             total_abstract[type_name][card_order] = abstract2cards(total_abstract[type_name][card_order])
